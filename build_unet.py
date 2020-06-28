@@ -9,9 +9,9 @@ def build_unet(img_shape, kernel_size, gf=64, channels=1):
     def conv_layer(x, filters, dropout=0, concat_layer=None):
 
         if concat_layer is not None:
-            x = Conv2DTranspose(filters, kernel_size=kernel_size, strides=(2,2), padding='same')(x)
-            x = LeakyReLU()(x)
-#             x = UpSampling2D(size=2)(x)
+            x = Conv2D(filters, kernel_size=kernel_size, strides=1, padding='same')(x)
+            x = LeakyReLU(alpha=0.2)(x)
+            x = UpSampling2D(size=2, interpolation='bilinear')(x)
 #             print(x.shape, concat_layer.shape)
             x = Concatenate()([x, concat_layer])
 
@@ -20,16 +20,15 @@ def build_unet(img_shape, kernel_size, gf=64, channels=1):
         # Use dropout as in this report http://cs230.stanford.edu/files_winter_2018/projects/6937642.pdf and pix2pix paper
         if dropout > 0 and concat_layer is not None:
             c = Dropout(dropout)(c)
-        c = Activation('relu')(c)
-#         c = LeakyReLU()(c)
+#         c = Activation('relu')(c)
+        c = LeakyReLU(alpha=0.2)(c)
         c = BatchNormalization()(c)
         c = Conv2D(filters, kernel_size=kernel_size, strides=1, padding='same')(c)
         # Use dropout as in this report http://cs230.stanford.edu/files_winter_2018/projects/6937642.pdf and pix2pix paper
         if dropout > 0 and concat_layer is not None:
             c = Dropout(dropout)(c)
-#         c = LeakyReLU()(c)
-        c = Activation('relu')(c)
-        # c = Activation('relu')(c)
+        c = LeakyReLU(alpha=0.2)(c)
+#         c = Activation('relu')(c)
         c = BatchNormalization()(c)
         # if dropout > 0:
         #     c = Dropout(dropout)(c)
@@ -60,7 +59,7 @@ def build_unet(img_shape, kernel_size, gf=64, channels=1):
 #     gen_af = Conv2D(round(gf/2), kernel_size=9, strides=1, padding='same', activation='relu')(up1)
 #     gen_af = BatchNormalization()(gen_af)
     gen_af = Conv2D(1, kernel_size=1, strides=1, padding='same')(up1)
-#     gen_af = LeakyReLU()(gen_af)
+    gen_af = LeakyReLU(alpha=0.2)(gen_af)
 #     gen_af = BatchNormalization(momentum=0.8)(c)
 
     return Model(arti, gen_af)
