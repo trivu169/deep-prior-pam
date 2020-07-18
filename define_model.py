@@ -6,7 +6,7 @@ from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers import concatenate, multiply
 from matplotlib import pyplot as plt
-from skimage.measure import compare_ssim as ssim
+from skimage.metrics import structural_similarity as ssim
 from skimage.measure import compare_psnr as psnr
 from skimage.measure import compare_mse as mse
 from utils import *
@@ -138,61 +138,33 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
 
     base_model = define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, 
                               width, inter, lr)
-#     base_model = build_unet(img_shape, kernel_size)
-    
     mask = Input(shape=(height, width,1))
 
-#     lanczos_kernel = np.zeros((h_factor,l_factor))
-#     for i in range(h_factor):
-#         for j in range(l_factor):
-#             x_d = np.abs(j-1.5)
-#             y_d = np.abs(i-1.5)
-#             lanczos_kernel[i,j] = np.sinc(x_d) * np.sinc(x_d/2.0) + np.sinc(y_d) * np.sinc(y_d/2.0)
-#     lanczos_kernel = lanczos_kernel / lanczos_kernel.sum()
-
-#     x = base_model.output
-#     down_sampled = Lambda(lambda x: K.zeros_like(x[:, ::h_factor, 
-#                                                    ::l_factor, :]))(x)
-
-# #     for i in range(h_factor):
-# #         for j in range(h_factor):
-# #             down_sampled = Lambda(lambda x: tf.image.resize_images(x[0][:, i::h_factor, j::l_factor, :] * 
-# #                                   lanczos_kernel[i, j], [height_lr, width_lr], method=tf.image.ResizeMethod.BICUBIC) + 
-# #                                   x[1])([x, down_sampled])
-#     for i in range(h_factor):
-#         for j in range(h_factor):
-#             down_sampled = Lambda(lambda x: x[0][:, i::h_factor, j::l_factor, :] * lanczos_kernel[i, j] + 
-#                                   x[1])([x, down_sampled])
-
-# #     down_sampled = Conv2D(filters=1, kernel_size=9, 
-# #                           strides=(h_factor, l_factor), padding='same')(base_model.output)
-# #     down_sampled = BatchNormalization()(down_sampled)
-# #     down_sampled = Conv2D(filters=1, kernel_size=9, 
-# #                           strides=1, padding='same', activation='relu')(down_sampled)
-
-#     down_sampled = Lambda(lambda x: tf.image.resize_images(x, [round(height/h_factor), round(width/l_factor)],
-#                                   method=tf.image.ResizeMethod.NEAREST_NEIGHBOR))(base_model.output)
-    
-    down_sampled = multiply([mask, base_model.output])
-#     down_sampled_2 = multiply([mask, base_model.output])
-
-#     print(down_sampled.shape, base_model.output.shape)
+    down_sampled = Lambda(apply_mask)([base_model.output, mask])
     model = Model([base_model.input, mask], down_sampled)
-#     model = Model(base_model.input, base_model.output)
 
-# Original
+    # Original
     model.compile(loss='mse', 
                   optimizer=Adam(lr=lr, amsgrad=True, clipvalue=10), 
                   metrics=['mse'])
-#     model.summary()
-    
-#     model.compile(loss='mse', 
-#                   optimizer=Adam(lr=lr), 
-#                   metrics=['mse'])
-
     return model, base_model
 
-
+def apply_mask(fn_input):
+    model_out = fn_input[0]
+    mask = fn_input[1]
+    fft_out = FFT_mod(model_out[...,0])
+    down = multiply([tf.cast(mask[...,0], tf.complex64), fft_out])
+    down_sampled = FFT_inv_mod(down)
+    down_sampled = down_sampled[...,None]
+    return down_sampled
+def MSE_inv_fft(y_true, y_pred):
+    y_true_inv = FFT_inv(y_true)
+    y_pred_inv = FFT_inv(y_pred)
+    if tf.executing_eagerly():
+        output = tf.keras.losses.MeanSquaredError()(y_true_inv, y_pred_inv).numpy()
+    else:
+        output = tf.keras.losses.MeanSquaredError()(y_true_inv, y_pred_inv)
+    return output
 def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output=False, im_down=None):
     input_depth = 32 # check out the paper
     height_lr, width_lr = image.shape[:2]
@@ -201,38 +173,44 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
 #     kernel_size = (h_factor, l_factor)
     kernel_size = 3
     model, base_model = get_model(height, width, height_lr, width_lr, h_factor, l_factor, 
-                                                      kernel_size, input_depth)
+                                  kernel_size, input_depth)
     if im_down is None:
         input_noise = np.random.uniform(0, 0.1, (1, height, width, input_depth))
     else:
         im_down = im_down.reshape(np.append(np.asarray(im_down.shape), 1))
-        input_noise = np.tile(im_down, (1, 1, input_depth))/2550
+        input_noise = np.tile(im_down, (1, 1, input_depth))/255
         input_noise = input_noise[None, :, :, :]
-    image = image.reshape(np.append(np.asarray(image.shape), 1))
-    mask = mask.reshape(np.append(np.asarray(mask.shape), 1))
-    mask = mask/255
+    #image = image.reshape(np.append(np.asarray(image.shape), 1))
+    #mask = mask.reshape(np.append(np.asarray(mask.shape), 1))
+    mask = mask/np.max(mask)
     l = []
     
 #     print(mask.shape)
     initialTime = time.time()
 #     ori_ssim = ssim(np.squeeze(image), np.squeeze(full_sampled))
     for i in range(iter):
-        loss = model.train_on_batch([input_noise + 
-                                     np.random.normal(0, noise_reg, (height, width,
-                                                                     input_depth)), 
-                                     mask[None, :, :, :]], 
-                                    image[None, :, :, :])
+        '''
+        real_gauss_noise = np.random.normal(0, noise_reg, (height, width, input_depth)).astype(np.float32)
+        imag_gauss_noise = (np.random.normal(0, noise_reg, (height, width, input_depth))*1j).astype(np.complex64)
+        complex_gauss_noise = (real_gauss_noise + imag_gauss_noise).astype(np.complex64)
+        func_input = (input_noise + complex_gauss_noise).astype(np.complex64)
+        '''
+        func_input = np.random.normal(0, noise_reg, (height, width, input_depth)).astype(np.float32)
+        loss = model.train_on_batch([func_input, 
+                                     mask[None, :, :, None]], 
+                                     image[None, :, :, None])
         l.append(loss)
         if i % 500 == 0 and show_output:
-            test_im = base_model.predict(input_noise)
-            plt.imshow(np.squeeze(test_im))
+            test_im = np.squeeze(base_model.predict(input_noise))
+            pred = FFT_inv(test_im)
+            plt.imshow(pred, cmap='gray')
 #             plt.colorbar()
             plt.show()
 #             plt.imshow(np.squeeze(full_sampled))
 # #             plt.colorbar()
 #             plt.show()
-            test_ssim = ssim(norm_uint8(np.squeeze(test_im)), norm_uint8(np.squeeze(full_sampled)))
-            print(str(i))
+            test_ssim = ssim(norm_uint8(pred), norm_uint8(im_down))
+            print(f'Epoch {str(i)}')
             print(test_ssim)
 #             print(ori_ssim)
     
