@@ -19,6 +19,7 @@ import cv2
 import h5py
 from keras import backend as K
 import time
+from build_unet import *
 
 def reflection_padding(x, padding):
     reflected = Lambda(lambda x: x[:, :, ::-1, :])(x)
@@ -57,20 +58,23 @@ def down_sampling(x, size, filters, kernel_size):
     x, size = conv_bn_relu(x, size, filters, kernel_size, (1, 1))
     return x, size
 
-def upsample(x, size, inter, filters):
+def upsample(x, size, inter, filters, transconvo=False):
 #     x = reflection_padding(x, (1,1))
-    x = Conv2D(filters, kernel_size=5, strides=1, padding='same')(x)
-#     x = BatchNormalization()(x)
-    x = LeakyReLU(alpha=0.2)(x)
-    x = UpSampling2D(size=(2, 2), interpolation='bilinear')(x)
-#     x = Lambda(lambda x: tf.image.resize_images(x, [size[0]*2, size[1]*2], method=tf.image.ResizeMethod.BICUBIC, align_corners=False))(x)
+    if transconvo:
+        x = Conv2DTranspose(filters, kernel_size=5, strides=(2,2), padding='same')(x)
+    else:
+        x = Conv2D(filters, kernel_size=5, strides=1, padding='same')(x)
+    #     x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
+        x = UpSampling2D(size=(2, 2), interpolation='bilinear')(x)
+    
     if inter == "bilinear":
         x_padded = reflection_padding(x, (1, 1))
         x = Lambda(lambda x: (x[:, :-1, 1:, :] + x[:, 1:, :-1, :] + x[:, :-1, :-1, :] + x[:, :-1, :-1, :]) / 4.0)(x_padded)
     return x, [size[0]*2, size[1]*2]
 
-def up_sampling(x, size, filters, kernel_size, inter):
-    x, size = upsample(x, size, inter, filters)
+def up_sampling(x, size, filters, kernel_size, inter, transconvo=False):
+    x, size = upsample(x, size, inter, filters, transconvo)
     x, size = conv_bn_relu(x, size, filters, kernel_size, (1, 1))
     x, size = conv_bn_relu(x, size, filters, 1, (1, 1))
     return x, size
@@ -80,7 +84,7 @@ def skip(x, size, filters, kernel_size):
     return x, size
 
 def define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, width, inter, 
-                 lr, input_channel=32):
+                 lr, input_channel=32, transconvo=False):
     depth = len(num_u)
     size = [height, width]
 
@@ -95,10 +99,11 @@ def define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, widt
         sizes.append(size)
 
     for i in range(depth-1, -1, -1):
+#         print(x.shape)
         if num_s[i] != 0:
             skipped, size = skip(down_sampled[i], size, num_s[i], kernel_s[i])
             x = concatenate([x, skipped], axis=3)
-        x, size = up_sampling(x, size, num_u[i], kernel_u[i], inter)
+        x, size = up_sampling(x, size, num_u[i], kernel_u[i], inter, transconvo)
 
         if sizes[i] != size:
             x = Lambda(lambda x: x[:, :sizes[i][0], :sizes[i][1], :])(x)
@@ -122,12 +127,14 @@ def mse_tv(model_output, lambda_tv=0.0000005):
     return loss
 
 def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_size, 
-              input_depth=32):
+              input_depth=32, transconvo=False):
     img_shape = (height, width, input_depth)
     num_u = [64, 64, 64, 64, 64]
     num_d = [64, 64, 64, 64, 64]
-    kernel_u = [11, 11, 11, 11, 11]
-    kernel_d = [11, 11, 11, 11, 11]
+#     num_u = [4, 4, 4, 4, 4]
+#     num_d = [4, 4, 4, 4, 4]
+    kernel_u = [kernel_size, kernel_size, kernel_size, kernel_size, kernel_size]
+    kernel_d = [kernel_size, kernel_size, kernel_size, kernel_size, kernel_size]
     num_s = [4, 4, 4, 4, 4]
     kernel_s = [1, 1, 1, 1, 1]
     lr = 0.1
@@ -137,7 +144,7 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
         https://distill.pub/2016/deconv-checkerboard/ - avoid using conv2dtranspose in nn """
 
     base_model = define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, 
-                              width, inter, lr)
+                              width, inter, lr, input_channel=input_depth, transconvo=transconvo)
 #     base_model = build_unet(img_shape, kernel_size)
     
     mask = Input(shape=(height, width,1))
@@ -193,15 +200,15 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
     return model, base_model
 
 
-def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output=False, im_down=None):
+def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output=False, im_down=None, transconvo=False, kernel_size=11,
+            save_imglog=False):
     input_depth = 32 # check out the paper
     height_lr, width_lr = image.shape[:2]
     height, width = full_sampled.shape[:2]
     h_factor, l_factor = round(height/height_lr), round(width/width_lr)
 #     kernel_size = (h_factor, l_factor)
-    kernel_size = 3
     model, base_model = get_model(height, width, height_lr, width_lr, h_factor, l_factor, 
-                                                      kernel_size, input_depth)
+                                                      kernel_size, input_depth, transconvo)
     if im_down is None:
         input_noise = np.random.uniform(0, 0.1, (1, height, width, input_depth))
     else:
@@ -228,6 +235,8 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
             plt.imshow(np.squeeze(test_im))
 #             plt.colorbar()
             plt.show()
+            if save_imglog:
+                cv2.imwrite(str(i) + '_iteration.png', norm_uint8(np.squeeze(test_im)))
 #             plt.imshow(np.squeeze(full_sampled))
 # #             plt.colorbar()
 #             plt.show()
@@ -238,4 +247,4 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
     
     sr_image = base_model.predict(input_noise)
     totalTrainingTimeHr = (time.time() - initialTime) / 60
-    return sr_image, l, model, totalTrainingTimeHr, input_noise
+    return sr_image, l, model, totalTrainingTimeHr, input_noise, base_model

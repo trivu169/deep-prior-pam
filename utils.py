@@ -4,8 +4,9 @@ from matplotlib import pyplot as plt
 
 def readImg(im, axis1_range=[200, 600], axis2_range=[300, 1400]):
 #     im = im[axis1_range[0]:axis1_range[1], axis2_range[0]:axis2_range[1], :]
-    im = im[round(im.shape[0]/2)-150:round(im.shape[0]/2)+150, round(im.shape[1]/2)-150:round(im.shape[1]/2)+150, :]
-#     im = im[round(im.shape[0]/2)-50:round(im.shape[0]/2)+250, round(im.shape[1]/2)-50:round(im.shape[1]/2)+250, :]
+#     im = im[round(im.shape[0]/2)-150:round(im.shape[0]/2)+150, round(im.shape[1]/2)-150:round(im.shape[1]/2)+150, :]
+#     im = im[150:450, 350:650, :]  # For '20190423_thinnedskull_Epi_   2_Image1_index0_pad_3-7'
+#     im = im[1000:1300, 1000:1300, :]
 #     print(im.shape)
     
     # Assign each channel to the designated var
@@ -41,15 +42,19 @@ def readImg(im, axis1_range=[200, 600], axis2_range=[300, 1400]):
     y_down = np.unique(y_down);
 #     print(x_down, y_down)
     im_down = im_down.reshape(len(x_down), len(y_down));
-    im_down = cv2.resize(im_down, (im_gt.shape[1], im_gt.shape[0]),
+    im_bicubic = cv2.resize(im_down, (im_gt.shape[1], im_gt.shape[0]),
                         interpolation=cv2.INTER_CUBIC)
+    im_bilinear = cv2.resize(im_down, (im_gt.shape[1], im_gt.shape[0]),
+                        interpolation=cv2.INTER_LINEAR)
+    im_lanczos = cv2.resize(im_down, (im_gt.shape[1], im_gt.shape[0]),
+                        interpolation=cv2.INTER_LANCZOS4)
     
     # Get interpolated factor
     factor = np.divide(im_gt.shape, (len(x_down), len(y_down)))
     factor = np.round(factor)
     factor = factor.astype(int)
     
-    return im, im_gt, im_masked, im_mask, im_down, factor
+    return im, im_gt, im_masked, im_mask, im_bicubic, factor, im_bilinear, im_lanczos
     
 def constructPlot(data, title, fsize=(10,6), cmax=None):
     """ Construct subplots based on the stacked matrices and its corresponded label 
