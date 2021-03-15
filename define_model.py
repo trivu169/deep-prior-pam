@@ -201,7 +201,7 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
 
 
 def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output=False, im_down=None, transconvo=False, kernel_size=11,
-            save_imglog=False):
+            save_imglog=False, img_path=None):
     input_depth = 32 # check out the paper
     height_lr, width_lr = image.shape[:2]
     height, width = full_sampled.shape[:2]
@@ -219,6 +219,8 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
     mask = mask.reshape(np.append(np.asarray(mask.shape), 1))
     mask = mask/255
     l = []
+    ssim_out = []
+    psnr_out = []
     
 #     print(mask.shape)
     initialTime = time.time()
@@ -230,13 +232,23 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
                                      mask[None, :, :, :]], 
                                     image[None, :, :, :])
         l.append(loss)
+#         if save_imglog and i in np.concatenate((np.arange(0,1000,100), np.arange(1000,5001,500))):
+#         if save_imglog and i in np.arange(0,5001,250):
+#             test_im = base_model.predict(input_noise)
+#             cv2.imwrite(img_path + '_' + str(i) + '_iteration.png', norm_uint8(np.squeeze(test_im)))
+        if save_imglog:
+            test_im = base_model.predict(input_noise)
+            test_ssim = ssim(norm_uint8(np.squeeze(test_im)), norm_uint8(np.squeeze(full_sampled)))
+            ssim_out.append(test_ssim)      
+#             print(ssim_out)      
+            test_psnr = psnr(norm_uint8(np.squeeze(test_im)), norm_uint8(np.squeeze(full_sampled)))
+            psnr_out.append(test_psnr)
+            
         if i % 500 == 0 and show_output:
             test_im = base_model.predict(input_noise)
             plt.imshow(np.squeeze(test_im))
 #             plt.colorbar()
             plt.show()
-            if save_imglog:
-                cv2.imwrite(str(i) + '_iteration.png', norm_uint8(np.squeeze(test_im)))
 #             plt.imshow(np.squeeze(full_sampled))
 # #             plt.colorbar()
 #             plt.show()
@@ -245,6 +257,9 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
             print(test_ssim)
 #             print(ori_ssim)
     
+    if save_imglog:        
+        np.savetxt(img_path + '_SSIMIter.txt', np.asarray([ssim_out]))
+        np.savetxt(img_path + '_PSNRIter.txt', np.asarray([psnr_out]))
     sr_image = base_model.predict(input_noise)
     totalTrainingTimeHr = (time.time() - initialTime) / 60
     return sr_image, l, model, totalTrainingTimeHr, input_noise, base_model
