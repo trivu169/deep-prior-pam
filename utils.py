@@ -9,11 +9,6 @@ def readImg(im, axis1_range=[200, 600], axis2_range=[300, 1400]):
 #     im = im[1000:1300, 1000:1300, :]
 #     print(im.shape)
     
-    # Assign each channel to the designated var
-    im_mask = np.copy(im[:, :, 0])  # Binary image of the mask
-    im_masked = np.copy(im[:, :, 1])  # 
-    im_gt = np.copy(im[:, :, 2])
-    
 #     # # Zero-pad fully-sampled image to make sure that it is integer-factor bigger than down sampled image (this is only for 
 #     # # original SR method by Satoshi et al.; comment out for our SR method)
 #     # h_factor, l_factor = round(im_gt.shape[0]/im_down.shape[0]), round(im_gt.shape[1]/im_down.shape[1])
@@ -35,13 +30,33 @@ def readImg(im, axis1_range=[200, 600], axis2_range=[300, 1400]):
 #     plt.imshow(im_gt)
 #     plt.show()
 
-    # Get the down-sampled image
-    im_down = im_masked[im_mask!=0];
-    [x_down, y_down] = np.where(im_mask!=0);
-    x_down = np.unique(x_down);
-    y_down = np.unique(y_down);
-#     print(x_down, y_down)
-    im_down = im_down.reshape(len(x_down), len(y_down));
+    
+    try:   
+        # Assign each channel to the designated var
+        im_mask = np.copy(im[:, :, 0])  # Binary image of the mask
+        im_masked = np.copy(im[:, :, 1])  # 
+        im_gt = np.copy(im[:, :, 2])
+        
+        # Get the down-sampled image
+        im_down = im_masked[im_mask!=0];
+        [x_down, y_down] = np.where(im_mask!=0);
+        x_down = np.unique(x_down);
+        y_down = np.unique(y_down);
+        im_down = im_down.reshape(len(x_down), len(y_down))
+    except:
+        # There will be data that the mask and the ground truth channel swap
+        # Reassign each channel to the designated var
+        im_mask = np.copy(im[:, :, 2])  # Binary image of the mask
+        im_masked = np.copy(im[:, :, 1])  # 
+        im_gt = np.copy(im[:, :, 0])
+        im_down = im_masked[im_mask!=0];
+        [x_down, y_down] = np.where(im_mask!=0);
+        x_down = np.unique(x_down);
+        y_down = np.unique(y_down);
+        im_down = im_down.reshape(len(x_down), len(y_down))       
+        im = np.dstack((im_mask, im_masked, im_gt))
+        
+    
     im_bicubic = cv2.resize(im_down, (im_gt.shape[1], im_gt.shape[0]),
                         interpolation=cv2.INTER_CUBIC)
     im_bilinear = cv2.resize(im_down, (im_gt.shape[1], im_gt.shape[0]),
