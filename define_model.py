@@ -59,12 +59,10 @@ def down_sampling(x, size, filters, kernel_size):
     return x, size
 
 def upsample(x, size, inter, filters, transconvo=False):
-#     x = reflection_padding(x, (1,1))
     if transconvo:
         x = Conv2DTranspose(filters, kernel_size=5, strides=(2,2), padding='same')(x)
     else:
         x = Conv2D(filters, kernel_size=5, strides=1, padding='same')(x)
-    #     x = BatchNormalization()(x)
         x = LeakyReLU(alpha=0.2)(x)
         x = UpSampling2D(size=(2, 2), interpolation='bilinear')(x)
     
@@ -99,7 +97,6 @@ def define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, widt
         sizes.append(size)
 
     for i in range(depth-1, -1, -1):
-#         print(x.shape)
         if num_s[i] != 0:
             skipped, size = skip(down_sampled[i], size, num_s[i], kernel_s[i])
             x = concatenate([x, skipped], axis=3)
@@ -116,7 +113,6 @@ def define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, widt
     return model
 
 def ssim_loss(y_true, y_pred):
-#     print(y_true.shape)
     return 255*tf.reduce_mean(tf.image.ssim(y_pred, y_true, max_val=255))
 
 def mse_tv(model_output, lambda_tv=0.0000005):
@@ -131,8 +127,6 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
     img_shape = (height, width, input_depth)
     num_u = [64, 64, 64, 64, 64]
     num_d = [64, 64, 64, 64, 64]
-#     num_u = [4, 4, 4, 4, 4]
-#     num_d = [4, 4, 4, 4, 4]
     kernel_u = [kernel_size, kernel_size, kernel_size, kernel_size, kernel_size]
     kernel_d = [kernel_size, kernel_size, kernel_size, kernel_size, kernel_size]
     num_s = [4, 4, 4, 4, 4]
@@ -145,49 +139,12 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
 
     base_model = define_model(num_u, num_d, kernel_u, kernel_d, num_s, kernel_s, height, 
                               width, inter, lr, input_channel=input_depth, transconvo=transconvo)
-#     base_model = build_unet(img_shape, kernel_size)
     
     mask = Input(shape=(height, width,1))
-
-#     lanczos_kernel = np.zeros((h_factor,l_factor))
-#     for i in range(h_factor):
-#         for j in range(l_factor):
-#             x_d = np.abs(j-1.5)
-#             y_d = np.abs(i-1.5)
-#             lanczos_kernel[i,j] = np.sinc(x_d) * np.sinc(x_d/2.0) + np.sinc(y_d) * np.sinc(y_d/2.0)
-#     lanczos_kernel = lanczos_kernel / lanczos_kernel.sum()
-
-#     x = base_model.output
-#     down_sampled = Lambda(lambda x: K.zeros_like(x[:, ::h_factor, 
-#                                                    ::l_factor, :]))(x)
-
-# #     for i in range(h_factor):
-# #         for j in range(h_factor):
-# #             down_sampled = Lambda(lambda x: tf.image.resize_images(x[0][:, i::h_factor, j::l_factor, :] * 
-# #                                   lanczos_kernel[i, j], [height_lr, width_lr], method=tf.image.ResizeMethod.BICUBIC) + 
-# #                                   x[1])([x, down_sampled])
-#     for i in range(h_factor):
-#         for j in range(h_factor):
-#             down_sampled = Lambda(lambda x: x[0][:, i::h_factor, j::l_factor, :] * lanczos_kernel[i, j] + 
-#                                   x[1])([x, down_sampled])
-
-# #     down_sampled = Conv2D(filters=1, kernel_size=9, 
-# #                           strides=(h_factor, l_factor), padding='same')(base_model.output)
-# #     down_sampled = BatchNormalization()(down_sampled)
-# #     down_sampled = Conv2D(filters=1, kernel_size=9, 
-# #                           strides=1, padding='same', activation='relu')(down_sampled)
-
-#     down_sampled = Lambda(lambda x: tf.image.resize_images(x, [round(height/h_factor), round(width/l_factor)],
-#                                   method=tf.image.ResizeMethod.NEAREST_NEIGHBOR))(base_model.output)
     
     down_sampled = multiply([mask, base_model.output])
-#     down_sampled_2 = multiply([mask, base_model.output])
-
-#     print(down_sampled.shape, base_model.output.shape)
     model = Model([base_model.input, mask], down_sampled)
-#     model = Model(base_model.input, base_model.output)
 
-# Original
     model.compile(loss='mse', 
                   optimizer=Adam(lr=lr, amsgrad=True, clipvalue=10), 
                   metrics=['mse'])
@@ -202,11 +159,10 @@ def get_model(height, width, height_lr, width_lr, h_factor, l_factor, kernel_siz
 
 def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output=False, im_down=None, transconvo=False, kernel_size=11,
             save_imglog=False, img_path=None):
-    input_depth = 32 # check out the paper
+    input_depth = 32 
     height_lr, width_lr = image.shape[:2]
     height, width = full_sampled.shape[:2]
     h_factor, l_factor = round(height/height_lr), round(width/width_lr)
-#     kernel_size = (h_factor, l_factor)
     model, base_model = get_model(height, width, height_lr, width_lr, h_factor, l_factor, 
                                                       kernel_size, input_depth, transconvo)
     if im_down is None:
@@ -247,15 +203,10 @@ def train_dp(image, full_sampled, mask, iter=5000, noise_reg = 0.05, show_output
         if i % 500 == 0 and show_output:
             test_im = base_model.predict(input_noise)
             plt.imshow(np.squeeze(test_im))
-#             plt.colorbar()
             plt.show()
-#             plt.imshow(np.squeeze(full_sampled))
-# #             plt.colorbar()
-#             plt.show()
             test_ssim = ssim(norm_uint8(np.squeeze(test_im)), norm_uint8(np.squeeze(full_sampled)))
             print(str(i))
             print(test_ssim)
-#             print(ori_ssim)
     
     if save_imglog:        
         np.savetxt(img_path + '_SSIMIter.txt', np.asarray([ssim_out]))

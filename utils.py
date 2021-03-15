@@ -3,34 +3,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 def readImg(im, axis1_range=[200, 600], axis2_range=[300, 1400]):
-#     im = im[axis1_range[0]:axis1_range[1], axis2_range[0]:axis2_range[1], :]
-#     im = im[round(im.shape[0]/2)-150:round(im.shape[0]/2)+150, round(im.shape[1]/2)-150:round(im.shape[1]/2)+150, :]
-#     im = im[150:450, 350:650, :]  # For '20190423_thinnedskull_Epi_   2_Image1_index0_pad_3-7'
-#     im = im[1000:1300, 1000:1300, :]
-#     print(im.shape)
-    
-#     # # Zero-pad fully-sampled image to make sure that it is integer-factor bigger than down sampled image (this is only for 
-#     # # original SR method by Satoshi et al.; comment out for our SR method)
-#     # h_factor, l_factor = round(im_gt.shape[0]/im_down.shape[0]), round(im_gt.shape[1]/im_down.shape[1])
-#     # im_gt_temp = np.zeros((im_down.shape[0]*h_factor, im_down.shape[1]*l_factor))
-#     # im_gt_temp[:im_gt.shape[0], :im_gt.shape[1]] = im_gt
-#     # im_gt = im_gt_temp
-
-#     # Crop the fully-sampled image with multiplier of 2^4 as the spatial size
-#     im_gt = im_gt[:im_gt.shape[0]-(im_gt.shape[0] % (16*mask[0])), 
-#                   :im_gt.shape[1]-(im_gt.shape[1] % (16*mask[1]))] # enforce size that contains 2^4 in multiplication 
-#                                                         # to prevent trouble with max pooling in the Unet  
-#     im_mask = im_mask[:im_gt.shape[0], :im_gt.shape[1]]
-#     im_masked = im_masked[:im_gt.shape[0], :im_gt.shape[1]]
-
-#     plt.imshow(im_mask)
-#     plt.show()
-#     plt.imshow(im_masked)
-#     plt.show()
-#     plt.imshow(im_gt)
-#     plt.show()
-
-    
     try:   
         # Assign each channel to the designated var
         im_mask = np.copy(im[:, :, 0])  # Binary image of the mask
